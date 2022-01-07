@@ -103,8 +103,8 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--src', help="Source directory")
     parser.add_argument('-d', '--dest', help="Destination directory")
     parser.add_argument('-a', '--ascending', action='store_true', help="Transfer directories in ascending order by directory name (default is descending order)")
-    parser.add_argument('--before', help="")
-    parser.add_argument('--after', help="")
+    parser.add_argument('--before', help="Transfer directories whose names are lexicographically before BEFORE")
+    parser.add_argument('--after', help="Transfer directories whose names are lexicographically after AFTER")
     args = parser.parse_args()
     
     main(args)
