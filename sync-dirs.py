@@ -53,7 +53,8 @@ def list_dirs_remote(src):
     client.connect(hostname=src_hostname, username=username, key_filename=os.path.expanduser('~/.ssh/id_rsa') )
     command = ' '.join(['ls', '-1', src_dir])
     stdin , stdout, stderr = client.exec_command(command)
-    transfer_dirs = list(filter(lambda x: x != "", stdout.read().decode('UTF-8').split('\n')))
+    transfer_dirs = stdout.read().decode('UTF-8').split('\n')
+    transfer_dirs = list(filter(lambda x: x != "", transfer_dirs))
 
     return transfer_dirs
 
@@ -77,6 +78,19 @@ def main(args):
     else:
         transfer_dirs = list_dirs_local(args.src)
 
+    if args.ascending:
+        transfer_dirs = sorted(transfer_dirs, reverse=False)
+    else:
+        transfer_dirs = sorted(transfer_dirs, reverse=True)
+
+    if args.before:
+        transfer_dirs = list(filter(lambda x: x[0:len(args.before)] < args.before, transfer_dirs))
+
+    if args.after:
+        transfer_dirs = list(filter(lambda x: x[0:len(args.after)] > args.after, transfer_dirs))
+        
+    print(json.dumps(transfer_dirs, indent=2))
+    exit(0)
 
     with multiprocessing.Pool(processes=args.processes) as pool:
         transfers = list(zip(transfer_dirs, itertools.cycle([args.src]), itertools.cycle([args.dest])))
@@ -88,6 +102,9 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--processes', type=int, default=4, help="Number of simultaneous transfers")
     parser.add_argument('-s', '--src', help="Source directory")
     parser.add_argument('-d', '--dest', help="Destination directory")
+    parser.add_argument('-a', '--ascending', action='store_true', help="Transfer directories in ascending order by directory name (default is descending order)")
+    parser.add_argument('--before', help="Transfer directories whose names are lexicographically before BEFORE")
+    parser.add_argument('--after', help="Transfer directories whose names are lexicographically after AFTER")
     args = parser.parse_args()
     
     main(args)
