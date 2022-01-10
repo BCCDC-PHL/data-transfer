@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import datetime
 import itertools
 import json
 import logging
@@ -12,18 +13,18 @@ import time
 import multiprocessing
 import os     
 
-from datetime import datetime
-
-import paramiko
 from stat import S_ISDIR
 
+import paramiko
+
+
 def sync(transfer_dir, src, dest):
-    logging.info(os.path.join(dest, transfer_dir))
-    transfer_start_time = datetime.now().astimezone().isoformat()
+    logging.info("Transfer started: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
+    transfer_start_time = datetime.datetime.now().astimezone().isoformat()
 
     subprocess.call(["rsync", "-aq", os.path.join(src, transfer_dir), dest])
-    transfer_complete_time = datetime.now().astimezone().isoformat()
-    print("transfer " + transfer_dir + " complete.")
+    transfer_complete_time = datetime.datetime.now().astimezone().isoformat()
+    logging.info("Transfer complete: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
     local_hostname = socket.gethostname()
     if ':' in src:
         src_hostname, src_dir = src.split(':') 
@@ -106,7 +107,8 @@ def list_dirs_local(src):
 
 
 def main(args):
-    logging.basicConfig(level=logging.INFO, format='[%(asctime)s :: %(levelname)s] %(message)s', datefmt="%Y-%m-%dT%H:%M:%S%z")
+    logging.basicConfig(level=logging.INFO, format='[%(asctime)s :: %(levelname)s] %(message)s')
+    logging.Formatter.formatTime = (lambda self, record, datefmt: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat())
 
     transfer_dirs = []
     
@@ -126,8 +128,6 @@ def main(args):
 
     if args.after:
         transfer_dirs = list(filter(lambda x: x[0:len(args.after)] > args.after, transfer_dirs))
-        
-    print(json.dumps(transfer_dirs, indent=2))
 
     with multiprocessing.Pool(processes=args.processes) as pool:
         transfers = list(zip(transfer_dirs, itertools.cycle([args.src]), itertools.cycle([args.dest])))
