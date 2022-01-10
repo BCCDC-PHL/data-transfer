@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import datetime
 import itertools
 import json
 import logging
@@ -12,36 +13,73 @@ import time
 import multiprocessing
 import os     
 
-from datetime import datetime
+from stat import S_ISDIR
 
 import paramiko
 
 
 def sync(transfer_dir, src, dest):
-    logging.info(os.path.join(dest, transfer_dir))
-    transfer_start_time = datetime.now().astimezone().isoformat()
+    logging.info("Transfer started: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
+    transfer_start_time = datetime.datetime.now().astimezone().isoformat()
 
     subprocess.call(["rsync", "-aq", os.path.join(src, transfer_dir), dest])
-    transfer_complete_time = datetime.now().astimezone().isoformat()
+    transfer_complete_time = datetime.datetime.now().astimezone().isoformat()
+    logging.info("Transfer complete: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
     local_hostname = socket.gethostname()
     if ':' in src:
         src_hostname, src_dir = src.split(':') 
         src = ':'.join([src_hostname, os.path.join(src, transfer_dir)])
+        #have to create a client object here in order to fetch size, as client object cannot be passed through multiprocessing
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        username = pwd.getpwuid(os.getuid())[0]
+        client.connect(hostname=src_hostname, username=username, key_filename=os.path.expanduser('~/.ssh/id_rsa') )
+        ftp = client.open_sftp()
+        totalsize_src = getsize_src(os.path.join(src_dir,transfer_dir), ftp)
     else:
+        #if files are transferred locally,then use the getsize local function 
+        totalsize_src = getsize_dest(os.path.join(src,transfer_dir)) 
         src = ':'.join([local_hostname, os.path.abspath(os.path.join(src, transfer_dir))])
-
+        
+    
+    totalsize_dest = getsize_dest(os.path.join(dest,transfer_dir))
+    
     transfer_complete = {
         "operation": "data_migration",
         "src": src,
         "dest": ':'.join([local_hostname, os.path.abspath(os.path.join(dest, transfer_dir))]),
         "timestamp_transfer_start": transfer_start_time,
         "timestamp_transfer_complete": transfer_complete_time,
+        "total_size_on_source_gb" : round(totalsize_src /1e9,5),
+        "total_size_on_destination_gb" : round(totalsize_dest /1e9,5)
     }
 
     with open(os.path.join(dest, transfer_dir, 'transfer_complete.json'), 'w') as f:
         json.dump(transfer_complete, f, indent=2)
         f.write('\n')
 
+def getsize_src (folderpath,ftp):
+    folderattr =  ftp.listdir_attr(folderpath)
+    size = 0
+    for i in folderattr:
+        mode = i.st_mode
+        if S_ISDIR(mode):
+            size += getsize_src(folderpath + "/" + i.filename, ftp)
+        else:
+            size += i.st_size
+    return size
+
+
+
+def getsize_dest(start_path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+    return total_size
 
 def list_dirs_remote(src):
     src_hostname = src.split(':')[0]
@@ -55,7 +93,7 @@ def list_dirs_remote(src):
     stdin , stdout, stderr = client.exec_command(command)
     transfer_dirs = stdout.read().decode('UTF-8').split('\n')
     transfer_dirs = list(filter(lambda x: x != "", transfer_dirs))
-
+    
     return transfer_dirs
 
 
@@ -69,7 +107,8 @@ def list_dirs_local(src):
 
 
 def main(args):
-    logging.basicConfig(level=logging.INFO, format='[%(asctime)s :: %(levelname)s] %(message)s', datefmt="%Y-%m-%dT%H:%M:%S%z")
+    logging.basicConfig(level=logging.INFO, format='[%(asctime)s :: %(levelname)s] %(message)s')
+    logging.Formatter.formatTime = (lambda self, record, datefmt: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat())
 
     transfer_dirs = []
     
@@ -83,14 +122,12 @@ def main(args):
     else:
         transfer_dirs = sorted(transfer_dirs, reverse=True)
 
+
     if args.before:
         transfer_dirs = list(filter(lambda x: x[0:len(args.before)] < args.before, transfer_dirs))
 
     if args.after:
         transfer_dirs = list(filter(lambda x: x[0:len(args.after)] > args.after, transfer_dirs))
-        
-    print(json.dumps(transfer_dirs, indent=2))
-    exit(0)
 
     with multiprocessing.Pool(processes=args.processes) as pool:
         transfers = list(zip(transfer_dirs, itertools.cycle([args.src]), itertools.cycle([args.dest])))
