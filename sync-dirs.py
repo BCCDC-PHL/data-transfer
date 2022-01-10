@@ -50,8 +50,8 @@ def sync(transfer_dir, src, dest):
         "dest": ':'.join([local_hostname, os.path.abspath(os.path.join(dest, transfer_dir))]),
         "timestamp_transfer_start": transfer_start_time,
         "timestamp_transfer_complete": transfer_complete_time,
-        "total_size_on_source_gb" : round(totalsize_src /10e9,5),
-        "total_size_on_destination_gb" : round(totalsize_dest /10e9,5)
+        "total_size_on_source_gb" : round(totalsize_src /1e9,5),
+        "total_size_on_destination_gb" : round(totalsize_dest /1e9,5)
     }
 
     with open(os.path.join(dest, transfer_dir, 'transfer_complete.json'), 'w') as f:
