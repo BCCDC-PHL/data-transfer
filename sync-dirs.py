@@ -18,7 +18,7 @@ from stat import S_ISDIR
 import paramiko
 
 
-def sync(transfer_dir, src, dest):
+def sync(transfer_dir, src, dest, username=None, key_path=None):
     logging.info("Transfer started: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
     transfer_start_time = datetime.datetime.now().astimezone().isoformat()
 
@@ -32,8 +32,11 @@ def sync(transfer_dir, src, dest):
         #have to create a client object here in order to fetch size, as client object cannot be passed through multiprocessing
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        username = pwd.getpwuid(os.getuid())[0]
-        client.connect(hostname=src_hostname, username=username, key_filename=os.path.expanduser('~/.ssh/id_rsa') )
+        if username is None:
+            username = pwd.getpwuid(os.getuid())[0]
+        if key_path is None:
+            key_path = os.path.expanduser('~/.ssh/id_rsa')
+        client.connect(hostname=src_hostname, username=username, key_filename=key_path)
         ftp = client.open_sftp()
         totalsize_src = getsize_src(os.path.join(src_dir,transfer_dir), ftp)
     else:
@@ -58,7 +61,8 @@ def sync(transfer_dir, src, dest):
         json.dump(transfer_complete, f, indent=2)
         f.write('\n')
 
-def getsize_src (folderpath,ftp):
+
+def getsize_src(folderpath, ftp):
     folderattr =  ftp.listdir_attr(folderpath)
     size = 0
     for i in folderattr:
@@ -68,7 +72,6 @@ def getsize_src (folderpath,ftp):
         else:
             size += i.st_size
     return size
-
 
 
 def getsize_dest(start_path):
@@ -81,14 +84,16 @@ def getsize_dest(start_path):
                 total_size += os.path.getsize(fp)
     return total_size
 
-def list_dirs_remote(src):
+def list_dirs_remote(src, username=None, key_path=None):
     src_hostname = src.split(':')[0]
     src_dir = src.split(':')[1]
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    username = pwd.getpwuid(os.getuid())[0]
-    key_path = os.path.expanduser('~/.ssh/id_rsa')
-    client.connect(hostname=src_hostname, username=username, key_filename=os.path.expanduser('~/.ssh/id_rsa') )
+    if username is None:
+        username = pwd.getpwuid(os.getuid())[0]
+    if key_path is None:
+        key_path = os.path.expanduser('~/.ssh/id_rsa')
+    client.connect(hostname=src_hostname, username=username, key_filename=key_path)
     command = ' '.join(['ls', '-1', src_dir])
     stdin , stdout, stderr = client.exec_command(command)
     transfer_dirs = stdout.read().decode('UTF-8').split('\n')
@@ -113,7 +118,7 @@ def main(args):
     transfer_dirs = []
     
     if ':' in args.src:
-        transfer_dirs = list_dirs_remote(args.src)
+        transfer_dirs = list_dirs_remote(args.src, args.user, args.key)
     else:
         transfer_dirs = list_dirs_local(args.src)
 
@@ -130,7 +135,14 @@ def main(args):
         transfer_dirs = list(filter(lambda x: x[0:len(args.after)] > args.after, transfer_dirs))
 
     with multiprocessing.Pool(processes=args.processes) as pool:
-        transfers = list(zip(transfer_dirs, itertools.cycle([args.src]), itertools.cycle([args.dest])))
+        # Build a list of lists:
+        # [
+        #   [ run_dir_0, src_dir, dest_dir, username, ssh_key_path ],
+        #   [ run_dir_1, src_dir, dest_dir, username, ssh_key_path ],
+        #   [ run_dir_2, src_dir, dest_dir, username, ssh_key_path ],
+        #   ...
+        # ]
+        transfers = list(zip(transfer_dirs, itertools.cycle([args.src]), itertools.cycle([args.dest]), itertools.cycle([args.user]), itertools.cycle([args.key])))
         pool.starmap(sync, transfers)
 
 
@@ -139,6 +151,8 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--processes', type=int, default=4, help="Number of simultaneous transfers")
     parser.add_argument('-s', '--src', help="Source directory")
     parser.add_argument('-d', '--dest', help="Destination directory")
+    parser.add_argument('-u', '--user', help="Username")
+    parser.add_argument('-k', '--key', help="SSH private key")
     parser.add_argument('-a', '--ascending', action='store_true', help="Transfer directories in ascending order by directory name (default is descending order)")
     parser.add_argument('--before', help="Transfer directories whose names are lexicographically before BEFORE")
     parser.add_argument('--after', help="Transfer directories whose names are lexicographically after AFTER")
