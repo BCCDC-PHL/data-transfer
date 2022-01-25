@@ -19,7 +19,9 @@ import paramiko
 
 
 def sync(transfer_dir, src, dest, username=None, key_path=None):
-    """                                                                                                                                                                                                             Perform file sync using rsync, then create a 'transfer_complete.json' file to record the transfer.                                                                                                              """
+    """
+    Perform file sync using rsync, then create a 'transfer_complete.json' file to record the transfer.
+    """
 
     logging.info("Transfer started: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
     transfer_start_time = datetime.datetime.now().astimezone().isoformat()
