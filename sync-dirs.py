@@ -19,10 +19,29 @@ import paramiko
 
 
 def sync(transfer_dir, src, dest, username=None, key_path=None):
+    """
+    Perform file sync using rsync, then create a 'transfer_complete.json' file to record the transfer.
+    """
+
     logging.info("Transfer started: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
     transfer_start_time = datetime.datetime.now().astimezone().isoformat()
 
-    subprocess.call(["rsync", "-aq", os.path.join(src, transfer_dir), dest])
+    rsync_cmd = ["rsync", "-aq"]
+
+    if ':' in src and username:
+        src_dir = username + '@' + os.path.join(src, transfer_dir)
+    else:
+        src_dir = os.path.join(src, transfer_dir)
+
+    if key_path:
+        rsync_cmd += ["-e", "ssh -i " + key_path]
+
+    try:
+        subprocess.check_call(rsync_cmd + [src_dir, dest])
+    except subprocess.CalledProcessError as e:
+        logging.error("Error transferring directory: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
+        return None
+
     transfer_complete_time = datetime.datetime.now().astimezone().isoformat()
     logging.info("Transfer complete: " + os.path.join(src, transfer_dir) + " -> " + os.path.abspath(os.path.join(dest, transfer_dir)))
     local_hostname = socket.gethostname()
